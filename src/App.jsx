@@ -1,543 +1,73 @@
-import React, { useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
-import {
-  Camera,
-  QrCode,
-  AlertTriangle,
-  CheckCircle2,
-  Download,
-  Plus,
-  Image as ImageIcon,
-  Ruler,
-  Search,
-  ScanLine,
-  Crosshair,
-  RotateCcw,
-} from "lucide-react";
+import React, { useMemo, useRef, useState } from 'react';
+import { Camera, QrCode, AlertTriangle, CheckCircle2, Download, Plus, Search, Crosshair, RotateCcw } from 'lucide-react';
 
 export default function App() {
-  const [projectName, setProjectName] = useState("Demo Crack Monitoring Project");
-  const [thresholdWarning, setThresholdWarning] = useState(1.0);
-  const [thresholdAction, setThresholdAction] = useState(2.0);
-  const [selectedGaugeId, setSelectedGaugeId] = useState("CG-001");
-  const [search, setSearch] = useState("");
-  const [gauges, setGauges] = useState([
-    {
-      id: "CG-001",
-      qrPayload: "crack_gauge|project=PROJECT-001|gauge_id=CG-001",
-      location: "North retaining wall, Sta. 10+25",
-      baselineReading: 0.0,
-      baselineDate: "2026-05-21",
-      baselineImage: null,
-      readings: [
-        {
-          date: "2026-05-21",
-          value: 0.0,
-          image: null,
-          note: "Baseline reading established.",
-          overlay: null,
-        },
-      ],
-    },
-  ]);
+  const [projectName, setProjectName] = useState('Demo Crack Monitoring Project');
+  const [warning, setWarning] = useState(1);
+  const [action, setAction] = useState(2);
+  const [selectedId, setSelectedId] = useState('CG-001');
+  const [search, setSearch] = useState('');
+  const [gauges, setGauges] = useState([{ id:'CG-001', qrPayload:'crack_gauge|project=PROJECT-001|gauge_id=CG-001', location:'North retaining wall, Sta. 10+25', baselineHorizontal:0, baselineVertical:0, baselineDate:'2026-05-21', baselineImage:null, readings:[{date:'2026-05-21', horizontal:0, vertical:0, image:null, note:'Baseline reading established.', overlay:null}] }]);
 
-  const selectedGauge = gauges.find((g) => g.id === selectedGaugeId) || gauges[0];
-  const currentReading = selectedGauge?.readings?.[selectedGauge.readings.length - 1];
-  const delta = currentReading ? currentReading.value - selectedGauge.baselineReading : 0;
-  const absDelta = Math.abs(delta);
-
+  const gauge = gauges.find(g => g.id === selectedId) || gauges[0];
+  const current = gauge?.readings?.[gauge.readings.length - 1];
+  const h = current?.horizontal ?? 0;
+  const v = current?.vertical ?? 0;
+  const dh = h - (gauge?.baselineHorizontal ?? 0);
+  const dv = v - (gauge?.baselineVertical ?? 0);
+  const maxDelta = Math.max(Math.abs(dh), Math.abs(dv));
   const status = useMemo(() => {
-    if (absDelta >= Number(thresholdAction)) {
-      return { label: "Action Exceedance", className: "status action", icon: AlertTriangle };
-    }
-    if (absDelta >= Number(thresholdWarning)) {
-      return { label: "Warning Trigger", className: "status warning", icon: AlertTriangle };
-    }
-    return { label: "Within Limits", className: "status ok", icon: CheckCircle2 };
-  }, [absDelta, thresholdWarning, thresholdAction]);
+    if (maxDelta >= Number(action)) return { label:'Action Exceedance', cls:'status action', Icon:AlertTriangle };
+    if (maxDelta >= Number(warning)) return { label:'Warning Trigger', cls:'status warning', Icon:AlertTriangle };
+    return { label:'Within Limits', cls:'status ok', Icon:CheckCircle2 };
+  }, [maxDelta, warning, action]);
 
-  const filteredGauges = gauges.filter((g) =>
-    `${g.id} ${g.location}`.toLowerCase().includes(search.toLowerCase())
-  );
+  const updateGauge = patch => setGauges(gauges.map(g => g.id === gauge.id ? {...g, ...patch} : g));
+  const addReading = reading => setGauges(gauges.map(g => g.id === gauge.id ? {...g, readings:[...g.readings, reading]} : g));
+  const addGauge = () => { const id = `CG-${String(gauges.length+1).padStart(3,'0')}`; setGauges([...gauges, {id, qrPayload:`crack_gauge|project=PROJECT-001|gauge_id=${id}`, location:'New gauge location', baselineHorizontal:0, baselineVertical:0, baselineDate:new Date().toISOString().slice(0,10), baselineImage:null, readings:[]}]); setSelectedId(id); };
+  const useQr = payload => { const id = extractGaugeId(payload); if(!id) return alert('No gauge_id found in QR payload.'); const found = gauges.find(g => g.id === id); if(found) return setSelectedId(id); setGauges([...gauges, {id, qrPayload:payload, location:'New gauge scanned in field', baselineHorizontal:0, baselineVertical:0, baselineDate:new Date().toISOString().slice(0,10), baselineImage:null, readings:[]}]); setSelectedId(id); };
+  const exportJson = () => { const blob = new Blob([JSON.stringify({projectName, thresholds:{warning_mm:Number(warning), action_mm:Number(action)}, gauges, exportedAt:new Date().toISOString()}, null, 2)], {type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='crack-gauge-monitoring-records.json'; a.click(); URL.revokeObjectURL(a.href); };
+  const filtered = gauges.filter(g => `${g.id} ${g.location}`.toLowerCase().includes(search.toLowerCase()));
+  const Icon = status.Icon;
 
-  const addGauge = () => {
-    const nextNumber = String(gauges.length + 1).padStart(3, "0");
-    const id = `CG-${nextNumber}`;
-    const newGauge = {
-      id,
-      qrPayload: `crack_gauge|project=PROJECT-001|gauge_id=${id}`,
-      location: "New gauge location",
-      baselineReading: 0,
-      baselineDate: new Date().toISOString().slice(0, 10),
-      baselineImage: null,
-      readings: [],
-    };
-    setGauges([...gauges, newGauge]);
-    setSelectedGaugeId(id);
-  };
-
-  const updateGauge = (patch) => {
-    setGauges(gauges.map((g) => (g.id === selectedGauge.id ? { ...g, ...patch } : g)));
-  };
-
-  const addReading = ({ value, image, note, overlay }) => {
-    const reading = {
-      date: new Date().toISOString().slice(0, 10),
-      value: Number(value),
-      image,
-      note: note || "",
-      overlay,
-    };
-    setGauges(
-      gauges.map((g) =>
-        g.id === selectedGauge.id ? { ...g, readings: [...g.readings, reading] } : g
-      )
-    );
-  };
-
-  const handleQrResult = (payload) => {
-    const id = extractGaugeId(payload);
-    if (!id) {
-      alert("QR code detected, but no gauge_id was found in the payload.");
-      return;
-    }
-
-    const existing = gauges.find((g) => g.id === id);
-    if (existing) {
-      setSelectedGaugeId(id);
-      return;
-    }
-
-    const newGauge = {
-      id,
-      qrPayload: payload,
-      location: "New gauge scanned in field",
-      baselineReading: 0,
-      baselineDate: new Date().toISOString().slice(0, 10),
-      baselineImage: null,
-      readings: [],
-    };
-    setGauges([...gauges, newGauge]);
-    setSelectedGaugeId(id);
-  };
-
-  const exportJson = () => {
-    const data = {
-      projectName,
-      thresholds: {
-        warning_mm: Number(thresholdWarning),
-        action_mm: Number(thresholdAction),
-      },
-      gauges,
-      exportedAt: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "crack-gauge-monitoring-records.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const StatusIcon = status.icon;
-
-  return (
-    <div className="page">
-      <div className="container">
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="header"
-        >
-          <div>
-            <h1>Crack Gauge Reader</h1>
-            <p>QR-based gauge lookup, image-assisted reading, baseline comparison, and exceedance alerts.</p>
-          </div>
-          <div className="buttonRow">
-            <button className="primary" onClick={addGauge}><Plus size={16} /> Add Gauge</button>
-            <button className="secondary" onClick={exportJson}><Download size={16} /> Export</button>
-          </div>
-        </motion.div>
-
-        <QrScannerPanel onQrResult={handleQrResult} />
-
-        <div className="layout">
-          <div className="sidebar">
-            <Card>
-              <label>Project Name</label>
-              <input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
-
-              <div className="twoCol">
-                <div>
-                  <label>Warning, mm</label>
-                  <input type="number" step="0.1" value={thresholdWarning} onChange={(e) => setThresholdWarning(e.target.value)} />
-                </div>
-                <div>
-                  <label>Action, mm</label>
-                  <input type="number" step="0.1" value={thresholdAction} onChange={(e) => setThresholdAction(e.target.value)} />
-                </div>
-              </div>
-            </Card>
-
-            <Card>
-              <div className="searchBox">
-                <Search size={16} />
-                <input placeholder="Search gauges" value={search} onChange={(e) => setSearch(e.target.value)} />
-              </div>
-              <div className="gaugeList">
-                {filteredGauges.map((g) => (
-                  <button
-                    key={g.id}
-                    onClick={() => setSelectedGaugeId(g.id)}
-                    className={g.id === selectedGauge.id ? "gaugeCard selected" : "gaugeCard"}
-                  >
-                    <span><b>{g.id}</b><QrCode size={16} /></span>
-                    <small>{g.location}</small>
-                  </button>
-                ))}
-              </div>
-            </Card>
-          </div>
-
-          {selectedGauge && (
-            <div className="main">
-              <div className={status.className}>
-                <div className="statusLeft">
-                  <StatusIcon size={34} />
-                  <div>
-                    <h2>{selectedGauge.id}: {status.label}</h2>
-                    <p>Change from baseline: <b>{delta.toFixed(2)} mm</b></p>
-                  </div>
-                </div>
-                <div className="metrics">
-                  <Metric label="Baseline" value={`${selectedGauge.baselineReading.toFixed(2)} mm`} />
-                  <Metric label="Current" value={`${currentReading ? currentReading.value.toFixed(2) : "--"} mm`} />
-                  <Metric label="Abs. Change" value={`${absDelta.toFixed(2)} mm`} />
-                </div>
-              </div>
-
-              <div className="twoCards">
-                <GaugeSetup selectedGauge={selectedGauge} updateGauge={updateGauge} />
-                <ImageMeasurementReader
-                  selectedGauge={selectedGauge}
-                  addReading={addReading}
-                  updateGauge={updateGauge}
-                />
-              </div>
-
-              <AnnotatedPhoto
-                gauge={selectedGauge}
-                currentReading={currentReading}
-                delta={delta}
-                statusLabel={status.label}
-              />
-              <ReadingsTable gauge={selectedGauge} baseline={selectedGauge.baselineReading} />
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+  return <div className="page"><div className="container">
+    <header><div><h1>Crack Gauge Reader</h1><p>Automatically detects the red crosshair, calculates horizontal opening/closing and vertical shear, and flags exceedances.</p></div><div className="buttons"><button onClick={addGauge}><Plus size={16}/>Add Gauge</button><button className="secondary" onClick={exportJson}><Download size={16}/>Export</button></div></header>
+    <QrPanel onUse={useQr}/>
+    <div className="layout"><aside>
+      <Card><label>Project Name</label><input value={projectName} onChange={e=>setProjectName(e.target.value)}/><div className="grid2"><div><label>Warning, mm</label><input type="number" step="0.1" value={warning} onChange={e=>setWarning(e.target.value)}/></div><div><label>Action, mm</label><input type="number" step="0.1" value={action} onChange={e=>setAction(e.target.value)}/></div></div></Card>
+      <Card><div className="search"><Search size={16}/><input placeholder="Search gauges" value={search} onChange={e=>setSearch(e.target.value)}/></div><div className="list">{filtered.map(g=><button key={g.id} className={g.id===gauge.id?'gauge selected':'gauge'} onClick={()=>setSelectedId(g.id)}><b>{g.id}</b><small>{g.location}</small></button>)}</div></Card>
+    </aside><main>
+      <div className={status.cls}><div className="statusLeft"><Icon size={34}/><div><h2>{gauge.id}: {status.label}</h2><p>Horizontal Δ: <b>{dh.toFixed(2)} mm</b> | Vertical Δ: <b>{dv.toFixed(2)} mm</b></p></div></div><div className="metrics"><Metric label="Current H" value={`${h.toFixed(2)} mm`}/><Metric label="Current V" value={`${v.toFixed(2)} mm`}/><Metric label="Max Δ" value={`${maxDelta.toFixed(2)} mm`}/></div></div>
+      <div className="twocards"><GaugeSetup gauge={gauge} updateGauge={updateGauge}/><AutoReader gauge={gauge} addReading={addReading} updateGauge={updateGauge}/></div>
+      <Annotated gauge={gauge} reading={current} dh={dh} dv={dv} status={status.label}/><History gauge={gauge}/>
+    </main></div>
+  </div></div>;
 }
 
-function extractGaugeId(payload) {
-  const text = String(payload || "");
-  const match = text.match(/gauge_id=([^|&\s]+)/i) || text.match(/CG-\d{3,}/i);
-  return match ? (match[1] || match[0]).trim() : "";
+function extractGaugeId(payload){ const t=String(payload||''); const m=t.match(/gauge_id=([^|&\s]+)/i)||t.match(/CG-\d{3,}/i); return m ? (m[1]||m[0]).trim() : ''; }
+function Card({children}){ return <div className="card">{children}</div>; }
+function Metric({label,value}){ return <div className="metric"><small>{label}</small><b>{value}</b></div>; }
+function QrPanel({onUse}){ const [payload,setPayload]=useState('crack_gauge|project=PROJECT-001|gauge_id=CG-001'); return <Card><h3><QrCode size={18}/>QR Gauge Lookup</h3><label>QR Payload or Scanned Value</label><div className="qrrow"><input className="mono" value={payload} onChange={e=>setPayload(e.target.value)}/><button onClick={()=>onUse(payload)}><QrCode size={16}/>Use QR</button></div><small>Manual QR entry is used for this prototype. Live camera QR scanning can be added next.</small></Card>; }
+function GaugeSetup({gauge, updateGauge}){ const ref=useRef(null); const image=file=>{ if(!file)return; const r=new FileReader(); r.onload=()=>updateGauge({baselineImage:r.result}); r.readAsDataURL(file); }; return <Card><h3><QrCode size={18}/>Gauge Registration</h3><label>Gauge ID</label><input value={gauge.id} disabled/><label>Location / Notes</label><textarea value={gauge.location} onChange={e=>updateGauge({location:e.target.value})}/><div className="grid2"><div><label>Baseline Horizontal, mm</label><input type="number" step="0.01" value={gauge.baselineHorizontal??0} onChange={e=>updateGauge({baselineHorizontal:Number(e.target.value)})}/></div><div><label>Baseline Vertical, mm</label><input type="number" step="0.01" value={gauge.baselineVertical??0} onChange={e=>updateGauge({baselineVertical:Number(e.target.value)})}/></div></div><label>Baseline Date</label><input type="date" value={gauge.baselineDate} onChange={e=>updateGauge({baselineDate:e.target.value})}/><input ref={ref} type="file" accept="image/*" capture="environment" hidden onChange={e=>image(e.target.files?.[0])}/><button className="secondary full" onClick={()=>ref.current?.click()}><Camera size={16}/>Capture Baseline Photo</button><p className="payload">QR Payload: <span>{gauge.qrPayload}</span></p></Card>; }
+
+function AutoReader({gauge, addReading, updateGauge}){
+  const [image,setImage]=useState(null), [note,setNote]=useState(''), [scaleMm,setScaleMm]=useState(10), [mode,setMode]=useState('origin');
+  const [points,setPoints]=useState({origin:null, scaleX:null, scaleY:null}), [manualH,setManualH]=useState(0), [manualV,setManualV]=useState(0), [detected,setDetected]=useState(null), [msg,setMsg]=useState('Upload a photo, then click Auto Detect Red Crosshair.');
+  const fileRef=useRef(null), boxRef=useRef(null), hiddenRef=useRef(null);
+  const pxX=useMemo(()=>dist(points.origin,points.scaleX,scaleMm),[points,scaleMm]);
+  const pxY=useMemo(()=>dist(points.origin,points.scaleY,scaleMm) || pxX,[points,scaleMm,pxX]);
+  const calc=useMemo(()=> points.origin && detected && pxX && pxY ? {horizontal:Number(((detected.x-points.origin.x)/pxX).toFixed(2)), vertical:Number(((points.origin.y-detected.y)/pxY).toFixed(2))} : null,[points.origin,detected,pxX,pxY]);
+  const finalH=calc?.horizontal ?? Number(manualH), finalV=calc?.vertical ?? Number(manualV), finalValue=Math.abs(finalH)>=Math.abs(finalV)?finalH:finalV;
+  const load=file=>{ if(!file)return; const r=new FileReader(); r.onload=()=>{setImage(r.result); setDetected(null); setMsg('Photo loaded. Click origin, horizontal scale, vertical scale, then auto-detect.');}; r.readAsDataURL(file); };
+  const click=e=>{ if(!boxRef.current||!image)return; const r=boxRef.current.getBoundingClientRect(); const p={x:((e.clientX-r.left)/r.width)*100,y:((e.clientY-r.top)/r.height)*100}; setPoints(old=>({...old,[mode]:p})); if(mode==='origin')setMode('scaleX'); if(mode==='scaleX')setMode('scaleY'); };
+  const reset=()=>{setPoints({origin:null,scaleX:null,scaleY:null}); setDetected(null); setMode('origin'); setMsg('Reset complete. Click the origin, horizontal scale point, and vertical scale point.');};
+  const detect=()=>{ const res=detectRedCrosshairCenter(hiddenRef.current); if(!res){setDetected(null); setMsg('Could not reliably detect a red crosshair. Try a clearer photo or use manual fallback.'); return;} setDetected(res); setMsg(`Detected red crosshair at X=${res.x.toFixed(1)}%, Y=${res.y.toFixed(1)}%. Confidence ${(res.confidence*100).toFixed(0)}%.`); };
+  const save=()=>{ const reading={date:new Date().toISOString().slice(0,10), value:finalValue, horizontal:finalH, vertical:finalV, image, note, overlay:{points:{...points,read:detected}, scaleDistanceMm:Number(scaleMm), horizontal:finalH, vertical:finalV, readMethod:detected?'auto_detected_red_crosshair':'manual_fallback'}}; addReading(reading); if(gauge.readings.length===0) updateGauge({baselineHorizontal:finalH, baselineVertical:finalV, baselineImage:image, baselineDate:reading.date}); setNote(''); };
+  return <Card><h3><Crosshair size={18}/>Automatic Gauge Reading</h3><p className="hint">Upload/capture the crack gauge photo. Click the zero/origin, then known horizontal and vertical scale points. The app detects the red crosshair and calculates horizontal opening/closing and vertical shear.</p><input ref={fileRef} type="file" accept="image/*" capture="environment" hidden onChange={e=>load(e.target.files?.[0])}/><button className="secondary full" onClick={()=>fileRef.current?.click()}><Camera size={16}/>Capture / Upload Gauge Photo</button>{image&&<img ref={hiddenRef} src={image} className="hiddenSource" alt="source"/>}<div className="grid2"><div><label>Known scale distance, mm</label><input type="number" step="0.1" value={scaleMm} onChange={e=>setScaleMm(e.target.value)}/></div><div><label>Detection Status</label><div className="statusMessage">{msg}</div></div></div><div className="buttons wrap"><button className={mode==='origin'?'primary':''} onClick={()=>setMode('origin')}>1. Zero / Origin</button><button className={mode==='scaleX'?'primary':''} onClick={()=>setMode('scaleX')}>2. Horizontal Scale</button><button className={mode==='scaleY'?'primary':''} onClick={()=>setMode('scaleY')}>3. Vertical Scale</button><button className="secondary" onClick={detect}><Crosshair size={16}/>Auto Detect Red Crosshair</button><button className="secondary" onClick={reset}><RotateCcw size={16}/>Reset</button></div><div ref={boxRef} onClick={click} className="imageBox">{image?<img src={image} alt="gauge"/>:<div className="empty"><Camera size={40}/><p>No image selected.</p></div>}{Object.entries(points).map(([k,p])=>p&&<Marker key={k} point={p} label={k==='origin'?'0':k==='scaleX'?'X':'Y'}/>)}{detected&&<Marker point={detected} label="R"/>}{points.origin&&points.scaleX&&<Line a={points.origin} b={points.scaleX}/>} {points.origin&&points.scaleY&&<Line a={points.origin} b={points.scaleY}/>} {points.origin&&detected&&<Line a={points.origin} b={detected} dashed/>}</div><div className="grid2"><div className="reading"><small>Horizontal Opening/Closing</small><b>{finalH.toFixed(2)} mm</b></div><div className="reading"><small>Vertical Shear</small><b>{finalV.toFixed(2)} mm</b></div></div><div className="grid2"><div><label>Manual horizontal fallback, mm</label><input type="number" step="0.01" value={manualH} onChange={e=>setManualH(e.target.value)}/></div><div><label>Manual vertical fallback, mm</label><input type="number" step="0.01" value={manualV} onChange={e=>setManualV(e.target.value)}/></div></div><p className="warn">Prototype note: this detects red pixels and estimates the crosshair center. Clear lighting, low glare, and a square camera angle are important.</p><label>Field Note</label><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Lighting, angle, crack condition, confidence, etc."/><button className="primary full" onClick={save}><Crosshair size={16}/>Save Automatic Reading</button></Card>;
 }
-
-function Card({ children }) {
-  return <div className="card">{children}</div>;
-}
-
-function Metric({ label, value }) {
-  return (
-    <div className="metric">
-      <div>{label}</div>
-      <b>{value}</b>
-    </div>
-  );
-}
-
-function QrScannerPanel({ onQrResult }) {
-  const [manualPayload, setManualPayload] = useState("crack_gauge|project=PROJECT-001|gauge_id=CG-001");
-  const [scannerNote, setScannerNote] = useState(
-    "Use manual scan for this web prototype. Live camera QR scanning can be added in the next version."
-  );
-
-  const tryBrowserScan = async () => {
-    if (!("BarcodeDetector" in window)) {
-      setScannerNote("This browser does not expose BarcodeDetector. Use the manual QR payload field for now.");
-      return;
-    }
-    setScannerNote("BarcodeDetector is available. Next version can connect this to the live camera.");
-  };
-
-  return (
-    <Card>
-      <div className="qrPanel">
-        <div>
-          <h3><ScanLine size={20} /> QR Gauge Lookup</h3>
-          <label>QR Payload or Scanned Value</label>
-          <input className="mono" value={manualPayload} onChange={(e) => setManualPayload(e.target.value)} />
-          <small>{scannerNote}</small>
-        </div>
-        <div className="buttonRow">
-          <button className="secondary" onClick={tryBrowserScan}>Check Scanner</button>
-          <button className="primary" onClick={() => onQrResult(manualPayload)}><QrCode size={16} /> Use QR</button>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function GaugeSetup({ selectedGauge, updateGauge }) {
-  const baselineRef = useRef(null);
-
-  const onBaselineImage = (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => updateGauge({ baselineImage: reader.result });
-    reader.readAsDataURL(file);
-  };
-
-  return (
-    <Card>
-      <h3><QrCode size={20} /> Gauge Registration</h3>
-
-      <label>Gauge ID</label>
-      <input value={selectedGauge.id} disabled />
-
-      <label>Location / Notes</label>
-      <textarea value={selectedGauge.location} onChange={(e) => updateGauge({ location: e.target.value })} />
-
-      <div className="twoCol">
-        <div>
-          <label>Baseline Reading, mm</label>
-          <input type="number" step="0.01" value={selectedGauge.baselineReading} onChange={(e) => updateGauge({ baselineReading: Number(e.target.value) })} />
-        </div>
-        <div>
-          <label>Baseline Date</label>
-          <input type="date" value={selectedGauge.baselineDate} onChange={(e) => updateGauge({ baselineDate: e.target.value })} />
-        </div>
-      </div>
-
-      <input ref={baselineRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => onBaselineImage(e.target.files?.[0])} />
-      <button className="secondary full" onClick={() => baselineRef.current?.click()}><Camera size={16} /> Capture Baseline Photo</button>
-
-      <div className="payload">QR Payload: <span>{selectedGauge.qrPayload}</span></div>
-    </Card>
-  );
-}
-
-function ImageMeasurementReader({ selectedGauge, addReading, updateGauge }) {
-  const [image, setImage] = useState(null);
-  const [note, setNote] = useState("");
-  const [scaleDistanceMm, setScaleDistanceMm] = useState(10);
-  const [mode, setMode] = useState("scaleA");
-  const [points, setPoints] = useState({ scaleA: null, scaleB: null, read: null });
-  const [manualValue, setManualValue] = useState(0);
-  const fileRef = useRef(null);
-  const imgWrapRef = useRef(null);
-
-  const pxPerMm = useMemo(() => {
-    if (!points.scaleA || !points.scaleB || !scaleDistanceMm) return null;
-    const dx = points.scaleB.x - points.scaleA.x;
-    const dy = points.scaleB.y - points.scaleA.y;
-    return Math.sqrt(dx * dx + dy * dy) / Number(scaleDistanceMm);
-  }, [points, scaleDistanceMm]);
-
-  const calculatedReading = useMemo(() => {
-    if (!pxPerMm || !points.scaleA || !points.read) return null;
-    const value = (points.read.x - points.scaleA.x) / pxPerMm;
-    return Number(value.toFixed(2));
-  }, [pxPerMm, points]);
-
-  const finalValue = calculatedReading ?? Number(manualValue);
-
-  const onImage = (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setImage(reader.result);
-    reader.readAsDataURL(file);
-  };
-
-  const handleImageClick = (e) => {
-    if (!imgWrapRef.current || !image) return;
-    const rect = imgWrapRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    setPoints((p) => ({ ...p, [mode]: { x, y } }));
-    if (mode === "scaleA") setMode("scaleB");
-    if (mode === "scaleB") setMode("read");
-  };
-
-  const resetPoints = () => {
-    setPoints({ scaleA: null, scaleB: null, read: null });
-    setMode("scaleA");
-  };
-
-  const saveReading = () => {
-    const overlay = { points, scaleDistanceMm, calculatedReading, manualValue: Number(manualValue) };
-    addReading({ value: finalValue, image, note, overlay });
-
-    if (selectedGauge.readings.length === 0) {
-      updateGauge({
-        baselineReading: finalValue,
-        baselineImage: image,
-        baselineDate: new Date().toISOString().slice(0, 10),
-      });
-    }
-    setNote("");
-  };
-
-  return (
-    <Card>
-      <h3><Ruler size={20} /> Image-Assisted Reading</h3>
-      <p className="hint">
-        Upload or capture the gauge photo. Click two known scale marks, then click the current reading point.
-      </p>
-
-      <input ref={fileRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => onImage(e.target.files?.[0])} />
-      <button className="secondary full" onClick={() => fileRef.current?.click()}><ImageIcon size={16} /> Capture / Upload Gauge Photo</button>
-
-      <div className="twoCol">
-        <div>
-          <label>Known scale distance, mm</label>
-          <input type="number" step="0.1" value={scaleDistanceMm} onChange={(e) => setScaleDistanceMm(e.target.value)} />
-        </div>
-        <div>
-          <label>Manual fallback, mm</label>
-          <input type="number" step="0.01" value={manualValue} onChange={(e) => setManualValue(e.target.value)} />
-        </div>
-      </div>
-
-      <div className="buttonRow wrap">
-        <button className={mode === "scaleA" ? "primary" : "secondary"} onClick={() => setMode("scaleA")}>1. Scale Start</button>
-        <button className={mode === "scaleB" ? "primary" : "secondary"} onClick={() => setMode("scaleB")}>2. Scale End</button>
-        <button className={mode === "read" ? "primary" : "secondary"} onClick={() => setMode("read")}>3. Reading Point</button>
-        <button className="secondary" onClick={resetPoints}><RotateCcw size={16} /> Reset</button>
-      </div>
-
-      <div ref={imgWrapRef} onClick={handleImageClick} className="imageBox">
-        {image ? (
-          <img src={image} alt="Gauge capture" />
-        ) : (
-          <div className="emptyImage"><Camera size={42} /><p>No image selected.</p></div>
-        )}
-        {Object.entries(points).map(([key, p]) =>
-          p ? <PointMarker key={key} point={p} label={key === "scaleA" ? "A" : key === "scaleB" ? "B" : "R"} /> : null
-        )}
-        {points.scaleA && points.scaleB && <Line a={points.scaleA} b={points.scaleB} />}
-        {points.scaleA && points.read && <Line a={points.scaleA} b={points.read} dashed />}
-      </div>
-
-      <div className="twoCol">
-        <div className="readingBox">
-          <span>Calculated Reading</span>
-          <b>{calculatedReading === null ? "--" : `${calculatedReading.toFixed(2)} mm`}</b>
-        </div>
-        <div className="readingBox">
-          <span>Saved Reading</span>
-          <b>{finalValue.toFixed(2)} mm</b>
-        </div>
-      </div>
-
-      <label>Field Note</label>
-      <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Lighting, angle, condition, confidence, etc." />
-
-      <button className="primary full" onClick={saveReading}><Crosshair size={16} /> Save Reading</button>
-    </Card>
-  );
-}
-
-function PointMarker({ point, label }) {
-  return (
-    <div className="pointMarker" style={{ left: `${point.x}%`, top: `${point.y}%` }}>
-      {label}
-    </div>
-  );
-}
-
-function Line({ a, b, dashed }) {
-  return (
-    <svg className="overlaySvg">
-      <line
-        x1={`${a.x}%`}
-        y1={`${a.y}%`}
-        x2={`${b.x}%`}
-        y2={`${b.y}%`}
-        stroke="black"
-        strokeWidth="3"
-        strokeDasharray={dashed ? "8 6" : "0"}
-      />
-    </svg>
-  );
-}
-
-function AnnotatedPhoto({ gauge, currentReading, delta, statusLabel }) {
-  const image = currentReading?.image || gauge.baselineImage;
-  const overlay = currentReading?.overlay;
-
-  return (
-    <Card>
-      <h3>Annotated Gauge Photo</h3>
-      <div className="imageBox large">
-        {image ? (
-          <img src={image} alt="Gauge reading" />
-        ) : (
-          <div className="emptyImage"><Camera size={42} /><p>No image uploaded yet.</p></div>
-        )}
-        {overlay?.points &&
-          Object.entries(overlay.points).map(([key, p]) =>
-            p ? <PointMarker key={key} point={p} label={key === "scaleA" ? "A" : key === "scaleB" ? "B" : "R"} /> : null
-          )}
-        {overlay?.points?.scaleA && overlay?.points?.scaleB && <Line a={overlay.points.scaleA} b={overlay.points.scaleB} />}
-        {overlay?.points?.scaleA && overlay?.points?.read && <Line a={overlay.points.scaleA} b={overlay.points.read} dashed />}
-
-        <div className="photoTag">
-          <b>{gauge.id}</b>
-          <small>Reading: {currentReading ? currentReading.value.toFixed(2) : gauge.baselineReading.toFixed(2)} mm</small>
-          <small>Δ Baseline: {delta.toFixed(2)} mm</small>
-          <span>{statusLabel}</span>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function ReadingsTable({ gauge, baseline }) {
-  return (
-    <Card>
-      <h3>Reading History</h3>
-      <div className="tableWrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Reading, mm</th>
-              <th>Change, mm</th>
-              <th>Note</th>
-            </tr>
-          </thead>
-          <tbody>
-            {gauge.readings.map((r, idx) => (
-              <tr key={idx}>
-                <td>{r.date}</td>
-                <td><b>{r.value.toFixed(2)}</b></td>
-                <td>{(r.value - baseline).toFixed(2)}</td>
-                <td>{r.note || "--"}</td>
-              </tr>
-            ))}
-            {gauge.readings.length === 0 && (
-              <tr>
-                <td colSpan="4" className="center">No readings saved yet.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  );
-}
+function dist(a,b,mm){ if(!a||!b||!mm)return null; const dx=b.x-a.x, dy=b.y-a.y; return Math.sqrt(dx*dx+dy*dy)/Number(mm); }
+function detectRedCrosshairCenter(img){ if(!img)return null; const canvas=document.createElement('canvas'); const scale=Math.min(1,900/img.naturalWidth); canvas.width=Math.round(img.naturalWidth*scale); canvas.height=Math.round(img.naturalHeight*scale); const ctx=canvas.getContext('2d'); ctx.drawImage(img,0,0,canvas.width,canvas.height); const {data,width,height}=ctx.getImageData(0,0,canvas.width,canvas.height); let minX=width,minY=height,maxX=0,maxY=0,count=0; for(let y=0;y<height;y++){for(let x=0;x<width;x++){const i=(y*width+x)*4,r=data[i],g=data[i+1],b=data[i+2]; if(r>120&&r>g*1.45&&r>b*1.45&&g<150&&b<150){count++; minX=Math.min(minX,x); minY=Math.min(minY,y); maxX=Math.max(maxX,x); maxY=Math.max(maxY,y);}}} if(count<30)return null; if(maxX-minX<8||maxY-minY<8)return null; return {x:((minX+maxX)/2/width)*100, y:((minY+maxY)/2/height)*100, confidence:Math.min(1,count/500)}; }
+function Marker({point,label}){ return <div className="marker" style={{left:`${point.x}%`,top:`${point.y}%`}}>{label}</div>; }
+function Line({a,b,dashed}){ return <svg className="svg"><line x1={`${a.x}%`} y1={`${a.y}%`} x2={`${b.x}%`} y2={`${b.y}%`} stroke="black" strokeWidth="3" strokeDasharray={dashed?'8 6':'0'}/></svg>; }
+function Annotated({gauge,reading,dh,dv,status}){ const image=reading?.image||gauge.baselineImage, overlay=reading?.overlay; return <Card><h3>Annotated Gauge Photo</h3><div className="imageBox large">{image?<img src={image} alt="annotated"/>:<div className="empty"><Camera size={40}/><p>No image uploaded yet.</p></div>}{overlay?.points&&Object.entries(overlay.points).map(([k,p])=>p&&<Marker key={k} point={p} label={k==='origin'?'0':k==='scaleX'?'X':k==='scaleY'?'Y':'R'}/>)}{overlay?.points?.origin&&overlay?.points?.scaleX&&<Line a={overlay.points.origin} b={overlay.points.scaleX}/>} {overlay?.points?.origin&&overlay?.points?.scaleY&&<Line a={overlay.points.origin} b={overlay.points.scaleY}/>} {overlay?.points?.origin&&overlay?.points?.read&&<Line a={overlay.points.origin} b={overlay.points.read} dashed/>}<div className="tag"><b>{gauge.id}</b><small>Horizontal: {(reading?.horizontal??0).toFixed(2)} mm</small><small>Vertical: {(reading?.vertical??0).toFixed(2)} mm</small><small>H Δ: {dh.toFixed(2)} mm | V Δ: {dv.toFixed(2)} mm</small><span>{status}</span></div></div></Card>; }
+function History({gauge}){ return <Card><h3>Reading History</h3><div className="table"><table><thead><tr><th>Date</th><th>Horizontal, mm</th><th>Vertical, mm</th><th>Note</th></tr></thead><tbody>{gauge.readings.map((r,i)=><tr key={i}><td>{r.date}</td><td><b>{(r.horizontal??0).toFixed(2)}</b></td><td><b>{(r.vertical??0).toFixed(2)}</b></td><td>{r.note||'--'}</td></tr>)}{gauge.readings.length===0&&<tr><td colSpan="4">No readings saved yet.</td></tr>}</tbody></table></div></Card>; }

@@ -1,26 +1,20 @@
 # Crack Gauge Reader
 
-A Vite/React prototype for crack gauge monitoring.
+Vite/React prototype for crack gauge monitoring.
 
-## What it does
+Features:
+- Gauge records and QR payload lookup
+- Baseline horizontal and vertical readings
+- Photo upload/capture
+- Automatic red crosshair detection from image pixels
+- Horizontal opening/closing and vertical shear calculation
+- Warning/action exceedance status
+- Annotated image overlay
+- JSON export
 
-- Creates crack gauge records
-- Uses a QR payload to find or create a gauge
-- Stores baseline reading and baseline photo
-- Lets the user upload/capture field photos
-- Lets the user click two scale points and one reading point
-- Calculates reading in mm
-- Compares current reading against baseline
-- Flags warning/action exceedances
-- Exports records as JSON
-
-## Local development
+Deploy on Vercel or run locally with:
 
 ```bash
 npm install
 npm run dev
 ```
-
-## Deployment
-
-This project is ready to deploy on Vercel.
